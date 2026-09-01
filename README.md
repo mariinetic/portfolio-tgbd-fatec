@@ -1175,10 +1175,37 @@ Assim como no backend, esses ajustes garantiram que a aplicação frontend evolu
 
 ---
 
-# (6º semestre) ![Status](https://img.shields.io/badge/Em%20Breve-FF69B4?style=flat-square)
+# Akpedia (6º semestre)
+
 ![Semestre](https://img.shields.io/badge/semestre-6%C2%BA%20%C2%B7%202026-FF69B4?logo=googledocs&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)
+![Vue.js](https://img.shields.io/badge/Vue.js-4FC08D?logo=vue.js&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496B3?logo=docker&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![DevOps](https://img.shields.io/badge/DevOps-0A0A0A?logo=azuredevops&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?logo=githubactions&logoColor=white)
+![Java](https://img.shields.io/badge/Java-ED8B00?logo=openjdk&logoColor=white)
 
+**Empresa Parceira:** Akaer — empresa brasileira de engenharia e tecnologia voltada aos setores aeronáutico, espacial e de defesa.
 
+O Akpedia é uma solução automatizada para classificação de documentos técnicos, desenvolvida para organizar e facilitar o gerenciamento de grandes volumes de documentação ao longo do ciclo de vida dos projetos.
+
+<p align="center">
+  <img width="1920" height="527" alt="Akpedia" src="https://github.com/user-attachments/assets/5879473a-ee64-481d-b764-c46baafae1ad"/>
+  <br/><br/>
+  <a href="https://github.com/Steam-Ducks/akpedia">
+    <img src="https://img.shields.io/badge/Repositório-GitHub-FF69B4?logo=github&logoColor=white" alt="Repositório" />
+  </a>
+</p>
+
+<details>
+  <summary>Detalhes do projeto</summary>
+
+  <!-- conteúdo dos detalhes aqui -->
+
+</details>
+    
 <br>
 
 ---
