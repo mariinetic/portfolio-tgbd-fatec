@@ -1180,9 +1180,9 @@ Assim como no backend, esses ajustes garantiram que a aplicação frontend evolu
 ![Semestre](https://img.shields.io/badge/semestre-6%C2%BA%20%C2%B7%202026-FF69B4?logo=googledocs&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)
 ![Vue.js](https://img.shields.io/badge/Vue.js-4FC08D?logo=vue.js&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-2496B3?logo=docker&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-47A248?logo=mongodb&logoColor=white)
 ![DevOps](https://img.shields.io/badge/DevOps-0A0A0A?logo=azuredevops&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?logo=githubactions&logoColor=white)
 ![Java](https://img.shields.io/badge/Java-ED8B00?logo=openjdk&logoColor=white)
@@ -1202,10 +1202,64 @@ O Akpedia é uma solução automatizada para classificação de documentos técn
 <details>
   <summary>Detalhes do projeto</summary>
 
-  <!-- conteúdo dos detalhes aqui -->
+![Brown Minimalist Welcome Message X_Twitter Header](https://github.com/user-attachments/assets/f3d75862-9269-4cc3-8754-7818520bc0f6)
+
+**Contexto:** Desenvolvimento de uma solução automatizada para classificação e organização de documentos técnicos da Akaer, facilitando o gerenciamento de grandes volumes de documentação ao longo do ciclo de vida dos projetos.
+
+**Problema:** A grande quantidade de documentos técnicos dificultava a organização, classificação e localização das informações. O processo manual demandava tempo e estava sujeito a inconsistências, tornando o gerenciamento da documentação menos eficiente.
+
+**Solução:** Desenvolvimento do Akpedia, uma solução automatizada para classificação de documentos técnicos, permitindo organizar e categorizar documentos de forma mais eficiente. A plataforma integra recursos de processamento e gerenciamento documental para facilitar a consulta, organização e acompanhamento das informações ao longo dos projetos.
+
+<h2 align="center">Tecnologias</h2>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/Java-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white" />
+  <img src="https://img.shields.io/badge/Vue.js-4FC08D?style=for-the-badge&logo=vue.js&logoColor=white" />
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" />
+  <img src="https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white" />
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+  <img src="https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white" />
+  <img src="https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white" />
+  <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" />
+</p>
+
+<img width="930" height="163" alt="image" src="https://github.com/user-attachments/assets/fe45a5b8-5aa1-4589-880c-0f9ab8c7d89d" />
+
+<details>
+  <summary><strong>Trilha de Desenvolvimento</strong></summary>
+
+<!-- Descrição das funcionalidades desenvolvidas -->
 
 </details>
-    
+
+<details>
+  <summary><strong>Trilha DevOps</strong></summary>
+
+<!-- Descrição das atividades de DevOps -->
+
+</details>
+
+<img width="933" height="153" alt="image" src="https://github.com/user-attachments/assets/051ad8aa-9248-4dee-804f-7dcf9d5fb227" />
+
+**Contribuições Pessoais:**
+
+<details>
+  <summary><strong>Hard Skills</strong></summary>
+
+<!-- Descrição das Hard Skills -->
+
+</details>
+
+<details>
+  <summary><strong>Soft Skills</strong></summary>
+
+<!-- Descrição das Soft Skills -->
+
+</details>
+
+</details>
+
 <br>
 
 ---
