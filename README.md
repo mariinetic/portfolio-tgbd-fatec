@@ -1234,9 +1234,30 @@ O Akpedia é uma solução automatizada para classificação de documentos técn
 </details>
 
 <details>
-  <summary><strong>Trilha DevOps</strong></summary>
+  <summary><strong>Trilha ML</strong></summary>
 
-<!-- Descrição das atividades de DevOps -->
+<details>
+  <summary><strong>Decisão: Modelo de Embedding</strong></summary>
+
+Decisão de arquitetura: modelo de embedding para busca semântica — Akpedia
+
+Fiquei responsável por pesquisar e comparar os modelos abertos disponíveis para essa tarefa. Em vez de me basear só em benchmarks genéricos em inglês, usei estudos recentes de avaliação nativa em português (MTEB-PT/MTEB-BR) para não escolher um modelo que parece bom "no geral" mas performa mal na língua real do produto. Avaliei seis candidatos (e5-small, granite-embedding-97m-r2, mpnet-base-v2, BGE-M3, BERTimbau-large e Qwen3-Embedding) em quatro critérios: qualidade de recuperação em português, tamanho, velocidade sem GPU (requisito real do projeto) e licença de uso.
+
+<img width="1351" height="597" alt="image" src="https://github.com/user-attachments/assets/408ed6d8-246d-4ae7-b2ec-642447bfeda8" />
+
+
+Documentei a decisão final — multilingual-e5-small, por equilibrar qualidade validada em PT com o melhor desempenho em CPU e licença MIT — incluindo o raciocínio técnico, os trade-offs de cada alternativa descartada e um detalhe de implementação que passaria despercebido: o modelo exige codificação assimétrica (prefixos query:/passage:), então documentei essa regra para virar requisito explícito nas tasks de indexação e de busca.
+
+<img width="1353" height="593" alt="image" src="https://github.com/user-attachments/assets/1f4b9dd4-82d0-42de-9f81-08746c7b4154" />
+
+
+Entreguei o resultado em duas versões: um documento técnico em Markdown para o repositório, e uma versão visual em HTML seguindo a identidade da marca do produto (cores, tipografia e componentes do próprio Akpedia), com um glossário para tornar os termos técnicos acessíveis a quem não é da área de IA.
+
+<img width="1352" height="598" alt="image" src="https://github.com/user-attachments/assets/fca6e2ce-e080-430a-8fe1-7975201f3034" />
+
+
+
+</details>
 
 </details>
 
