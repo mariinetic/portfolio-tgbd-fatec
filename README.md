@@ -1226,10 +1226,148 @@ O Akpedia é uma solução automatizada para classificação de documentos técn
 
 <img width="930" height="163" alt="image" src="https://github.com/user-attachments/assets/fe45a5b8-5aa1-4589-880c-0f9ab8c7d89d" />
 
+
 <details>
   <summary><strong>Trilha de Desenvolvimento</strong></summary>
 
-<!-- Descrição das funcionalidades desenvolvidas -->
+<details>
+  <summary><strong>Task: Fetch the document</strong></summary>
+
+Adicionei o endpoint `GET /api/v1/documents/{id}/file`, que serve o PDF armazenado com o media type registrado no documento e `Content-Disposition: inline`, para que abrir a URL no navegador exiba o arquivo em vez de baixá-lo.
+
+```java
+@GetMapping("/documents/{id}/file")
+public ResponseEntity<Resource> file(@PathVariable("id") Long id, WebRequest request) {
+
+    DocumentFileDescriptor file = fileService.describe(id);
+    if (isUnchanged(file, request)) {
+        return null; // 304, sem ler o blob
+    }
+
+    ByteArrayResource content = new ByteArrayResource(fileService.contentOf(file));
+    return headers(file, ResponseEntity.ok())
+            .contentLength(content.contentLength())
+            .body(content);
+}
+```
+
+Por enquanto o endpoint é aberto — sem checagem de acesso, como combinado com o time até a autenticação ser implementada — mas o próprio estado do documento restringe o acesso: `ARCHIVED` responde 403, `PENDING`/`PROCESSING` respondem 409, e um documento com indexação `FAILED` continua acessível, já que o PDF é convertido e armazenado antes da etapa de embedding rodar.
+
+Os headers de cache, ETag e o `nosniff` são montados centralizados, e só PDFs são servidos como `inline` — qualquer outro formato futuro seria oferecido como download:
+
+```java
+private static BodyBuilder headers(DocumentFileDescriptor file, BodyBuilder response) {
+    ContentDisposition disposition = dispositionFor(file)
+            .filename(file.filename(), StandardCharsets.UTF_8)
+            .build();
+
+    return response
+            .contentType(file.contentType())
+            .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+            .header(NOSNIFF_HEADER, "nosniff")
+            .eTag(file.etag())
+            .lastModified(file.lastModified())
+            .cacheControl(CacheControl.noCache().cachePrivate());
+}
+
+private static ContentDisposition.Builder dispositionFor(DocumentFileDescriptor file) {
+    return MediaType.APPLICATION_PDF.equalsTypeAndSubtype(file.contentType())
+            ? ContentDisposition.inline()
+            : ContentDisposition.attachment();
+}
+```
+
+Uma requisição com header `Range` é atendida por um handler separado — o tipo de retorno (`List<ResourceRegion>`) é o que sinaliza ao Spring para escrever regiões de bytes, então um único método não conseguiria declarar as duas formas de resposta:
+
+```java
+@Hidden
+@GetMapping(value = "/documents/{id}/file", headers = "Range")
+public ResponseEntity<List<ResourceRegion>> filePart(
+        @PathVariable("id") Long id,
+        @RequestHeader(HttpHeaders.RANGE) String range,
+        WebRequest request) {
+
+    DocumentFileDescriptor file = fileService.describe(id);
+    if (isUnchanged(file, request)) {
+        return null;
+    }
+
+    ByteArrayResource content = new ByteArrayResource(fileService.contentOf(file));
+    try {
+        List<ResourceRegion> regions = HttpRange.toResourceRegions(HttpRange.parseRanges(range), content);
+        return headers(file, ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)).body(regions);
+    } catch (IllegalArgumentException e) {
+        return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                .header(HttpHeaders.CONTENT_RANGE, "bytes */" + content.contentLength())
+                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                .build();
+    }
+}
+```
+
+Limitações conhecidas: `If-Range` não é tratado (teórico, já que nenhuma rota altera um binário armazenado); o PDF é carregado inteiro na memória, herdado do mapeamento `byte[]`; falta uma rota de reindexação para documentos `FAILED`.
+
+</details>
+
+<details>
+  <summary><strong>Task: Include title and snippet in the search response</strong></summary>
+
+Os resultados de busca agora carregam sete campos — formato do documento e a posição do chunk que deu match, além do que já existia:
+
+```java
+/**
+ * @param documentId   identificador do documento nas demais rotas
+ * @param mimeType     formato do arquivo armazenado, lido do documento, não assumido
+ * @param matchedChunk trecho do chunk que deu match, cortado no tamanho configurado
+ * @param chunkIndex   posição do chunk no documento, a partir de 0 — diz se o match
+ *                     está no início do documento ou enterrado nele
+ */
+public record SearchResult(
+        @JsonProperty("document_id") Long documentId,
+        String name,
+        String description,
+        @JsonProperty("mime_type") String mimeType,
+        double score,
+        @JsonProperty("matched_chunk") String matchedChunk,
+        @JsonProperty("chunk_index") Integer chunkIndex) {
+}
+```
+
+O corte do `matched_chunk` colapsa espaços em branco (o chunk vem de PDF, carrega quebras de linha da página), corta na última palavra inteira que couber, e conta a reticência dentro do próprio limite configurável:
+
+```java
+private String snippetOf(String chunk) {
+    if (chunk == null) return null;
+
+    String text = WHITESPACE_RUN.matcher(chunk).replaceAll(" ").strip();
+    int limit = properties.snippetLength();
+    if (text.length() <= limit) return text;
+
+    int room = limit - ELLIPSIS.length();
+    int cut = text.lastIndexOf(' ', room);
+    if (cut < room / 2) {
+        cut = room; // palavra única maior que metade do orçamento: corta no meio mesmo
+    }
+    return text.substring(0, cut).stripTrailing() + ELLIPSIS;
+}
+```
+
+As colunas da query nativa são lidas por posição, não por nome — nomeadas como constantes para que um `SELECT` reordenado quebre em teste em vez de silenciosamente trocar score por snippet:
+
+```java
+private static final int DOCUMENT_ID = 0;
+private static final int NAME = 1;
+private static final int DESCRIPTION = 2;
+private static final int MIME_TYPE = 3;
+private static final int MATCHED_CHUNK = 4;
+private static final int CHUNK_INDEX = 5;
+private static final int SCORE = 6;
+```
+
+`SearchQueryTest` (novo) pina essa ordem; `SearchControllerTest` pina o contrato JSON com as sete chaves exatas.
+
+</details>
 
 </details>
 
@@ -1245,21 +1383,142 @@ Fiquei responsável por pesquisar e comparar os modelos abertos disponíveis par
 
 <img width="1351" height="597" alt="image" src="https://github.com/user-attachments/assets/408ed6d8-246d-4ae7-b2ec-642447bfeda8" />
 
-
 Documentei a decisão final — multilingual-e5-small, por equilibrar qualidade validada em PT com o melhor desempenho em CPU e licença MIT — incluindo o raciocínio técnico, os trade-offs de cada alternativa descartada e um detalhe de implementação que passaria despercebido: o modelo exige codificação assimétrica (prefixos query:/passage:), então documentei essa regra para virar requisito explícito nas tasks de indexação e de busca.
 
 <img width="1353" height="593" alt="image" src="https://github.com/user-attachments/assets/1f4b9dd4-82d0-42de-9f81-08746c7b4154" />
-
 
 Entreguei o resultado em duas versões: um documento técnico em Markdown para o repositório, e uma versão visual em HTML seguindo a identidade da marca do produto (cores, tipografia e componentes do próprio Akpedia), com um glossário para tornar os termos técnicos acessíveis a quem não é da área de IA.
 
 <img width="1352" height="598" alt="image" src="https://github.com/user-attachments/assets/fca6e2ce-e080-430a-8fe1-7975201f3034" />
 
+</details>
 
+<details>
+  <summary><strong>Task: Split the text into chunks</strong></summary>
+
+`split_text(text, chunk_size=1000, chunk_overlap=200) -> list[str]`, em `app.documents`. O texto é dividido em frases primeiro; quebras de linha simples viram espaço, porque texto de PDF traz uma quebra por linha visual, não por frase:
+
+```python
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?…])\s+|(?<=[.!?…][\"'”’)\]])\s+")
+
+def split_sentences(text: str) -> list[str]:
+    sentences: list[str] = []
+    for paragraph in _PARAGRAPH_BREAK.split(text):
+        collapsed = " ".join(paragraph.split())
+        if not collapsed:
+            continue
+        sentences.extend(part for part in _SENTENCE_BOUNDARY.split(collapsed) if part)
+    return sentences
+```
+
+Os chunks são montados com frases inteiras; a sobreposição repete a maior sequência de frases finais que couber no `chunk_overlap`, e `chunk_size` sempre tem prioridade — se o overlap ultrapassar o limite, as frases mais antigas caem primeiro:
+
+```python
+def split_text(text, *, chunk_size=DEFAULT_CHUNK_SIZE, chunk_overlap=DEFAULT_CHUNK_OVERLAP) -> list[str]:
+    if chunk_overlap >= chunk_size:
+        raise ValueError("chunk_overlap must be smaller than chunk_size.")
+
+    pieces = [piece for sentence in split_sentences(text) for piece in _fit_sentence(sentence, chunk_size)]
+
+    chunks: list[str] = []
+    current: list[str] = []
+    for piece in pieces:
+        if current and _joined_length(current) + 1 + len(piece) > chunk_size:
+            chunks.append(" ".join(current))
+            current = _overlap_tail(current, chunk_overlap)
+            while current and _joined_length(current) + 1 + len(piece) > chunk_size:
+                current.pop(0)
+        current.append(piece)
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
+```
+
+Uma única frase maior que `chunk_size` é dividida em limites de palavra, para o limite nunca ser ultrapassado:
+
+```python
+def _fit_sentence(sentence: str, chunk_size: int) -> list[str]:
+    if len(sentence) <= chunk_size:
+        return [sentence]
+    pieces, current = [], []
+    for word in sentence.split(" "):
+        while len(word) > chunk_size:
+            if current:
+                pieces.append(" ".join(current)); current = []
+            pieces.append(word[:chunk_size]); word = word[chunk_size:]
+        if current and _joined_length(current) + 1 + len(word) > chunk_size:
+            pieces.append(" ".join(current)); current = []
+        current.append(word)
+    if current:
+        pieces.append(" ".join(current))
+    return pieces
+```
+
+Medido em caracteres, não tokens, para não acoplar ao tokenizador do modelo — os defaults (1000/200) cabem dentro da janela de 512 tokens do `multilingual-e5-small` mesmo com o prefixo `passage:`.
+
+</details>
+
+<details>
+  <summary><strong>Task: Read the text inside the files</strong></summary>
+
+Pacote `app.documents`, ponto de entrada único, contrato abstrato para cada formato:
+
+```python
+class DocumentTextExtractor(ABC):
+    extensions: ClassVar[tuple[str, ...]] = ()
+    media_types: ClassVar[tuple[str, ...]] = ()
+
+    @abstractmethod
+    def extract_text(self, source: BinaryIO) -> str:
+        """Implementações levantam DocumentReadError e normalizam via normalize_text_parts."""
+```
+
+O extrator de PDF lê só a camada de texto — um scan sem OCR retorna texto vazio em vez de falhar:
+
+```python
+class PdfTextExtractor(DocumentTextExtractor):
+    extensions: ClassVar[tuple[str, ...]] = (".pdf",)
+    media_types: ClassVar[tuple[str, ...]] = ("application/pdf",)
+
+    def extract_text(self, source: BinaryIO) -> str:
+        try:
+            reader = PdfReader(source)
+            if reader.is_encrypted and reader.decrypt("") == PasswordType.NOT_DECRYPTED:
+                raise DocumentReadError("Password-protected PDF.")
+            pages = [page.extract_text() or "" for page in reader.pages]
+        except DocumentReadError:
+            raise
+        except (PdfReadError, ValueError, OSError, KeyError, TypeError) as exc:
+            raise DocumentReadError(f"Could not read the PDF: {exc}") from exc
+        return normalize_text_parts(pages)
+```
+
+O `ExtractorRegistry` é o ponto de extensão: um formato novo entra com uma chamada a `register()`, sem tocar no código do PDF. Resolve primeiro por extensão, depois por MIME type:
+
+```python
+def resolve(self, *, filename: str | None = None, media_type: str | None = None) -> DocumentTextExtractor:
+    if filename:
+        extractor = self._by_extension.get(file_extension(filename))
+        if extractor is not None:
+            return extractor
+    if media_type:
+        extractor = self._by_media_type.get(media_type.split(";")[0].strip().lower())
+        if extractor is not None:
+            return extractor
+    identified = filename or media_type or "unnamed file"
+    supported = ", ".join(self.supported_extensions) or "none"
+    raise UnsupportedDocumentFormatError(f"Unsupported format for '{identified}'. Supported: {supported}.")
+```
+
+`pypdf` 6.19 foi escolhido por ser puro Python, BSD-3, sem binário nativo — roda na imagem Docker slim e em hosts sem GPU. `PyMuPDF` foi rejeitado por licença AGPL (conflita com o ADR de embedding); `pdfplumber`/`pdfminer.six`, por serem pesados demais para retornar só texto simples.
+
+19 testes passando: página única, múltiplas páginas, texto acentuado, páginas vazias, stream, extensão `.PDF` maiúscula, resolução por MIME, PDF truncado, ponto de extensão do registry, mensagens de erro e validação.
 
 </details>
 
 </details>
+
+
 
 <img width="933" height="153" alt="image" src="https://github.com/user-attachments/assets/051ad8aa-9248-4dee-804f-7dcf9d5fb227" />
 
