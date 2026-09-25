@@ -1231,7 +1231,7 @@ O Akpedia é uma solução automatizada para classificação de documentos técn
   <summary><strong>Trilha de Desenvolvimento</strong></summary>
 
 <details>
-  <summary><strong>Task: Fetch the document</strong></summary>
+  <summary><strong>Task: Fetch the document (Sprint1)</strong></summary>
 
 Adicionei o endpoint `GET /api/v1/documents/{id}/file`, que serve o PDF armazenado com o media type registrado no documento e `Content-Disposition: inline`, para que abrir a URL no navegador exiba o arquivo em vez de baixá-lo.
 
@@ -1311,7 +1311,7 @@ Limitações conhecidas: `If-Range` não é tratado (teórico, já que nenhuma r
 </details>
 
 <details>
-  <summary><strong>Task: Include title and snippet in the search response</strong></summary>
+  <summary><strong>Task: Include title and snippet in the search response (Sprint1)</strong></summary>
 
 Os resultados de busca agora carregam sete campos — formato do documento e a posição do chunk que deu match, além do que já existia:
 
@@ -1375,7 +1375,7 @@ private static final int SCORE = 6;
   <summary><strong>Trilha ML</strong></summary>
 
 <details>
-  <summary><strong>Decisão: Modelo de Embedding</strong></summary>
+  <summary><strong>Decisão: Modelo de Embedding (Sprint1)</strong></summary>
 
 Decisão de arquitetura: modelo de embedding para busca semântica — Akpedia
 
@@ -1394,7 +1394,7 @@ Entreguei o resultado em duas versões: um documento técnico em Markdown para o
 </details>
 
 <details>
-  <summary><strong>Task: Split the text into chunks</strong></summary>
+  <summary><strong>Task: Split the text into chunks (Sprint1)</strong></summary>
 
 `split_text(text, chunk_size=1000, chunk_overlap=200) -> list[str]`, em `app.documents`. O texto é dividido em frases primeiro; quebras de linha simples viram espaço, porque texto de PDF traz uma quebra por linha visual, não por frase:
 
@@ -1459,7 +1459,7 @@ Medido em caracteres, não tokens, para não acoplar ao tokenizador do modelo �
 </details>
 
 <details>
-  <summary><strong>Task: Read the text inside the files</strong></summary>
+  <summary><strong>Task: Read the text inside the files (Sprint1)</strong></summary>
 
 Pacote `app.documents`, ponto de entrada único, contrato abstrato para cada formato:
 
@@ -1525,16 +1525,46 @@ def resolve(self, *, filename: str | None = None, media_type: str | None = None)
 **Contribuições Pessoais:**
 
 <details>
-  <summary><strong>Hard Skills</strong></summary>
+<summary><strong>Hard Skills</strong></summary>
+<br>
 
-<!-- Descrição das Hard Skills -->
+* **Machine Learning / Inteligência Artificial** — Uso com autonomia
+  Aplicação dos conhecimentos adquiridos anteriormente em ML e IA na definição da solução de busca semântica do Akpedia. Fiquei responsável por pesquisar e comparar diferentes modelos de embedding disponíveis, considerando critérios como qualidade de recuperação em português, tamanho do modelo, desempenho em CPU e licença de uso. A análise envolveu modelos como `multilingual-e5-small`, `BGE-M3`, `BERTimbau-large`, `mpnet-base-v2`, `granite-embedding-97m-r2` e `Qwen3-Embedding`, utilizando avaliações específicas para português como referência.
+
+* **Embeddings e Busca Semântica** — Uso com autonomia
+  Aprofundamento e aplicação prática do conceito de embeddings para representar documentos e consultas em um espaço vetorial, permitindo realizar buscas por similaridade sem depender exclusivamente de correspondência de palavras-chave. Também analisei as particularidades do modelo escolhido, incluindo o uso de codificação assimétrica com os prefixos `query:` e `passage:`, documentando essa regra como parte dos requisitos técnicos da solução.
+
+* **Processamento de documentos para RAG** — Uso com autonomia
+  Desenvolvimento da etapa de preparação dos documentos para a futura busca semântica, incluindo extração de texto de PDFs e divisão do conteúdo em chunks. Implementei uma estratégia de chunking baseada em frases, com sobreposição entre os chunks e tratamento específico para frases que ultrapassam o tamanho máximo definido. Essa estrutura prepara o conteúdo para a geração dos embeddings e posterior recuperação durante a busca.
+
+* **Python** — Uso com autonomia
+  Desenvolvimento das funcionalidades relacionadas ao processamento de documentos e preparação dos dados para ML, utilizando Python para extração de texto, normalização, chunking e organização da arquitetura de extensibilidade dos extratores.
+
+* **Java / Spring Boot** — Uso com autonomia
+  Desenvolvimento de endpoints relacionados ao gerenciamento e consulta dos documentos, incluindo a implementação da rota para recuperação dos arquivos armazenados e melhorias no contrato da resposta de busca, com informações como `mime_type`, `matched_chunk` e `chunk_index`.
+
+* **Arquitetura e decisões técnicas de ML** — Uso com autonomia
+  Documentação e justificativa da escolha do modelo de embedding, considerando não apenas métricas de benchmark, mas também as restrições reais do projeto, como execução em CPU, idioma dos documentos e licença. A decisão foi registrada em um documento técnico e também em uma versão visual, permitindo comunicar a escolha tanto para pessoas técnicas quanto para integrantes sem conhecimento aprofundado em IA.
 
 </details>
+
 
 <details>
   <summary><strong>Soft Skills</strong></summary>
 
-<!-- Descrição das Soft Skills -->
+Claro! Eu colocaria os quatro com um pouco mais de contexto, mas sem deixar exageradamente longo:
+
+* **Trabalho em equipe**
+  Desde o início da sprint, o time conseguiu manter uma boa divisão das responsabilidades, com cada integrante contribuindo com sua parte sem sobrecarregar os demais. Houve colaboração e alinhamento durante o desenvolvimento, principalmente quando surgiram dúvidas ou pontos que dependiam de mais de uma pessoa. Essa dinâmica contribuiu para que as atividades avançassem de forma equilibrada e para que todos conseguissem participar ativamente da entrega.
+
+* **Responsabilidade**
+  Durante a sprint, cada integrante demonstrou comprometimento com as tarefas que assumiu, buscando cumprir os prazos e garantir que sua parte estivesse pronta para a entrega final. Essa responsabilidade individual teve impacto direto no resultado coletivo, já que o andamento de cada atividade dependia do comprometimento dos demais. Conseguimos chegar à apresentação com a entrega preparada para ser apresentada e validada pelo cliente.
+
+* **Comunicação**
+  A apresentação da primeira sprint foi uma oportunidade importante para desenvolver a comunicação com o cliente. Apresentei a entrega, expliquei o que havia sido desenvolvido e acompanhei o processo de validação junto ao cliente. Além de apresentar as funcionalidades, foi necessário ouvir os retornos e esclarecer possíveis dúvidas, tornando o contato mais próximo e permitindo entender diretamente a percepção do cliente sobre o resultado entregue.
+
+* **Maturidade profissional**
+  Ao longo da sprint, o time demonstrou maturidade na forma de trabalhar e lidar com as responsabilidades. Cada integrante conseguiu assumir suas atividades, respeitar o espaço e o trabalho dos demais e contribuir para o objetivo comum. Também houve uma postura profissional durante a apresentação e a validação com o cliente, entendendo os feedbacks como parte natural do processo de desenvolvimento e mantendo o foco na qualidade da entrega.
 
 </details>
 
