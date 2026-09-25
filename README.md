@@ -1552,8 +1552,6 @@ def resolve(self, *, filename: str | None = None, media_type: str | None = None)
 <details>
   <summary><strong>Soft Skills</strong></summary>
 
-Claro! Eu colocaria os quatro com um pouco mais de contexto, mas sem deixar exageradamente longo:
-
 * **Trabalho em equipe**
   Desde o início da sprint, o time conseguiu manter uma boa divisão das responsabilidades, com cada integrante contribuindo com sua parte sem sobrecarregar os demais. Houve colaboração e alinhamento durante o desenvolvimento, principalmente quando surgiram dúvidas ou pontos que dependiam de mais de uma pessoa. Essa dinâmica contribuiu para que as atividades avançassem de forma equilibrada e para que todos conseguissem participar ativamente da entrega.
 
