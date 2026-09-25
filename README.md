@@ -1568,8 +1568,6 @@ def resolve(self, *, filename: str | None = None, media_type: str | None = None)
 
 </details>
 
-<br>
-
 ---
 
 <img  width="1500" height="500" alt="image" src="https://github.com/user-attachments/assets/06b871fe-e34e-4666-8aa8-d05ef11176e5" />
