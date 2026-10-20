@@ -1369,6 +1369,184 @@ private static final int SCORE = 6;
 
 </details>
 
+<details> <summary><strong>Task: Create the default approver user (Sprint2)</strong></summary>
+
+Ainda não existe cadastro nem login, mas todo documento precisa de autor e toda aprovação precisa registrar quem aprovou. A migration V5__seed_default_approver.sql cria direto no banco um setor padrão e um único usuário, que é ao mesmo tempo autor dos uploads e aprovador. O id do setor vem de um SELECT, não de um VALUES fixo — num banco onde já existem setores, Engenharia não é necessariamente o id 1:
+
+sql
+INSERT INTO sectors (name, description) VALUES
+    ('Engenharia', 'Setor padrao enquanto nao existe cadastro de setores')
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO users (name, email, password_hash, sector_id, is_active)
+SELECT 'Aprovador Padrao',
+       'aprovador@akpedia.local',
+       'placeholder-sem-login', -- nunca é uma credencial utilizável
+       sectors.id,
+       TRUE
+FROM sectors
+WHERE sectors.name = 'Engenharia'
+ON CONFLICT (email) DO NOTHING;
+
+O usuário é configurado por email (akpedia.default-user-email), não por id: o id é valor de sequência e muda de banco para banco, o email é o que a migration fixa. O servidor resolve esse email para o id uma única vez, no startup — InitializingBean roda enquanto os beans ainda estão sendo criados, então o servidor web nunca começa a atender num banco sem o usuário:
+
+java
+@Override
+public void afterPropertiesSet() {
+    String email = properties.defaultUserEmail();
+    this.userId = users.findByEmail(email)
+            .map(User::getId)
+            .orElseThrow(() -> new IllegalStateException(
+                    ("Usuario padrao nao encontrado pelo email '%s'. "
+                            + "A configuracao akpedia.default-user-email (variavel "
+                            + "DEFAULT_USER_EMAIL) tem que apontar para um usuario que exista "
+                            + "no banco. Confira se a migration V5__seed_default_approver.sql "
+                            + "rodou e se o email configurado e o mesmo que ela insere.")
+                            .formatted(email)));
+}
+
+Falhar no startup é proposital: é melhor do que descobrir o problema num 404 sem explicação no primeiro upload. Com isso, o creatorId do POST /api/v1/documents passou a ser opcional — omitido, o documento cai no usuário padrão:
+
+java
+Long authorId = creatorId != null ? creatorId : defaultUser.userId();
+User creator = users.findById(authorId)
+        .orElseThrow(() -> new UserNotFoundException(authorId));
+
+O README documenta o usuário como temporário (deve sair junto com a migration, o akpedia.default-user-email e o VITE_DEFAULT_USER_ID do front quando o cadastro e o login entrarem). Testes: DefaultUserProviderTest, DefaultUserStartupTest (a aplicação não sobe com um email inexistente) e SchemaMigrationTest (o usuário existe e está ligado a um setor depois das migrations).
+
+</details>
+
+<details> <summary><strong>Task: Pre-analysis route in akpedia-server (Sprint2)</strong></summary>
+
+Pela arquitetura, a tela de upload nunca conversa com o akpedia-ml. Criei o POST /api/v1/documents/analyze: o servidor recebe o arquivo, decide se o formato é aceito, converte para PDF, pergunta ao akpedia-ml e devolve sugestões que a tela pode reenviar direto no upload. Nada é persistido — uma análise abandonada não deixa rastro.
+
+java
+public DocumentAnalysisResponse analyze(byte[] content, String filename, String contentType) {
+    if (content == null || content.length == 0) {
+        throw new InvalidDocumentUploadException("The uploaded file is empty.");
+    }
+    if (!DocumentFormats.isAcceptedForAnalysis(filename, contentType)) {
+        throw new UnsupportedDocumentFormatException(filename, DocumentFormats.ACCEPTED_EXTENSIONS);
+    }
+
+    boolean alreadyPdf = DocumentFormats.isAlreadyPdf(filename, contentType, content);
+    byte[] pdf = alreadyPdf ? content : gotenberg.convertToPdf(content, filename, contentType);
+
+    DocumentClassification classification = classify(pdf, filename);
+
+    // Sem categoria é o akpedia-ml dizendo "não sei" (sem centróides), não um contrato quebrado
+    if (classification.category() == null || classification.category().isBlank()) {
+        return new DocumentAnalysisResponse(classification.title(), classification.description(), null, null);
+    }
+
+    Category suggested = categories.findByName(classification.category())
+            .orElseThrow(() -> new UnknownSuggestedCategoryException(classification.category()));
+
+    return new DocumentAnalysisResponse(
+            classification.title(), classification.description(),
+            suggested.getId(), confidenceOf(classification));
+}
+
+A whitelist (PDF, DOC/DOCX, XLS/XLSX) ficou numa classe DocumentFormats compartilhada com o upload, para os dois concordarem: um arquivo que a análise aceitou não pode ser recusado pelo upload logo depois. Extensão e media type são consultados e basta um deles bater, porque nenhum é confiável sozinho — e application/octet-stream fica de fora de propósito, senão a whitelist viraria formalidade:
+
+java
+static boolean isAcceptedForAnalysis(String filename, String contentType) {
+    return hasAcceptedExtension(filename) || hasAcceptedMediaType(contentType);
+}
+
+O akpedia-ml responde a categoria por nome (ele não lê o banco do servidor); converter o nome no id de categories é trabalho do servidor. A resposta já sai com o id e a confiança no formato que o upload recebe (suggestedCategoryId, categoryConfidence), e a confiança é limitada a 0–1 — a coluna category_confidence tem um CHECK, e um valor fora disso viraria um upload falhando um passo depois:
+
+java
+private BigDecimal confidenceOf(DocumentClassification classification) {
+    BigDecimal confidence = classification.confidence();
+    if (confidence == null) {
+        return BigDecimal.ZERO;
+    }
+    return confidence.min(BigDecimal.ONE).max(BigDecimal.ZERO);
+}
+
+Os erros têm códigos próprios para a tela saber reagir: 415 unsupported_format traz a lista de formatos aceitos no corpo (a tela não precisa manter uma cópia que ficaria desatualizada), e 503 category_suggestion_unavailable é separado do embedding_service_unavailable genérico — é a falha da qual a tela se recupera liberando a escolha manual da categoria, e ela só consegue isso se reconhecer o código:
+
+java
+private DocumentClassification classify(byte[] pdf, String filename) {
+    try {
+        return embeddingClient.classifyDocument(pdf, filename, MediaType.APPLICATION_PDF_VALUE);
+    } catch (EmbeddingUnavailableException e) {
+        throw new CategorySuggestionUnavailableException(e);
+    }
+}
+
+Só o "nunca respondeu" é traduzido: um documento que o akpedia-ml recusou ativamente mantém o motivo que ele deu. Um segundo commit alinhou o DTO DocumentClassification com o contrato real do akpedia-ml (category: null, scores vazio sem centróides). Testes: DocumentAnalysisServiceTest (15 casos), DocumentControllerTest cobrindo cada formato aceito, um recusado e o ML indisponível, e EmbeddingClientTest para o novo método do client.
+
+</details>
+
+<details> <summary><strong>Task: Restrict search and listing to approved documents (Sprint2)</strong></summary>
+
+Com o novo fluxo de aprovação, documentos em revisão ou devolvidos apareceriam para todo mundo, porque a busca só deixava de fora os arquivados. Troquei a regra na query nativa da busca:
+
+sql
+WHERE d.processing_status = 'COMPLETED'
+    AND d.status = 'APPROVED'
+    AND e.model_name = :modelName
+    AND e.dimensions = :dimensions
+
+E na listagem de recentes do GET /documents, o status excluído deixou de ser parâmetro e foi escrito na própria query:
+
+java
+@Query("""
+        SELECT d FROM Document d
+        JOIN FETCH d.category
+        JOIN FETCH d.creator
+        WHERE d.processingStatus = :processingStatus
+          AND d.status = com.akpedia.server.entity.enums.DocumentStatus.APPROVED
+        ORDER BY COALESCE(d.updatedAt, d.createdAt) DESC, d.id DESC
+        """)
+List<Document> findRecent(
+        @Param("processingStatus") ProcessingStatus processingStatus,
+        Pageable pageable);
+
+APPROVED fixo na query, e não como parâmetro, é proposital: é uma listagem pública, e um chamador capaz de escolher quais status ela mostra é exatamente o caminho para um documento em revisão chegar a quem não deveria vê-lo. As duas consultas documentam uma à outra no Javadoc ("as duas têm que andar juntas"). Atualizei EmbeddingSearchTest, SearchQueryTest e RecentDocumentsQueryTest para provar que PENDING_APPROVAL e REJECTED não aparecem, e a descrição da rota no Swagger.
+
+</details>
+
+<details> <summary><strong>Task: List the author's submissions (Sprint2)</strong></summary>
+
+Quem enviou um documento quer saber se ele já está disponível para os colegas e, se voltou, por quê. Criei o GET /api/v1/documents/submissions?creatorId=, paginado e ordenado por created_at DESC (com o id desempatando, para dois documentos enviados no mesmo instante não trocarem de página e um deles sumir). Sem creatorId, usa o usuário padrão.
+
+O status mostrado ao autor é derivado, mais grosso que o armazenado — ele não precisa da máquina de aprovação, só da resposta a "meus colegas já acham isso? se não, por quê?":
+
+java
+public static SubmissionStatus of(DocumentStatus status, ProcessingStatus processingStatus) {
+    return switch (status) {
+        case PENDING_APPROVAL -> UNDER_REVIEW;
+        case APPROVED -> switch (processingStatus) {
+            case PENDING, PROCESSING -> PROCESSING;
+            case COMPLETED -> PUBLISHED;
+            case FAILED -> INDEXING_FAILED;
+        };
+        case REJECTED -> RETURNED;
+        case DRAFT, ARCHIVED -> null;
+    };
+}
+
+A task pedia três estados, mas aprovação sozinha não torna um documento encontrável: a indexação só começa depois dela. Chamar de PUBLISHED nesse meio-tempo faria o autor avisar os colegas de algo que eles ainda não acham, por isso separei PROCESSING e INDEXING_FAILED. Como o switch é exaustivo, um status novo no enum quebra a compilação em vez de cair num default silencioso.
+
+review_comment e reviewed_at só aparecem num documento devolvido — um comentário deixado num documento que depois foi aprovado é histórico, não algo para o autor agir, e mostrado ao lado de PUBLISHED pareceria que ele ainda está devolvido:
+
+java
+boolean returned = status == SubmissionStatus.RETURNED;
+
+return new SubmissionSummary(
+        document.getId(), document.getName(), document.getDescription(),
+        document.getCategory().getName(), status,
+        returned ? document.getReviewComment() : null,
+        returned ? document.getReviewedAt() : null,
+        document.getCreatedAt(), document.getUpdatedAt());
+
+Um creatorId inexistente responde 404 em vez de página vazia — que seria lida como "você não enviou nada", outra coisa, e justamente a que o autor acreditaria. Testes: DocumentSubmissionServiceTest (14), SubmissionsQueryTest (6) e casos novos no DocumentControllerTest.
+
+</details>
+
 </details>
 
 <details>
@@ -1513,6 +1691,198 @@ def resolve(self, *, filename: str | None = None, media_type: str | None = None)
 `pypdf` 6.19 foi escolhido por ser puro Python, BSD-3, sem binário nativo — roda na imagem Docker slim e em hosts sem GPU. `PyMuPDF` foi rejeitado por licença AGPL (conflita com o ADR de embedding); `pdfplumber`/`pdfminer.six`, por serem pesados demais para retornar só texto simples.
 
 19 testes passando: página única, múltiplas páginas, texto acentuado, páginas vazias, stream, extensão `.PDF` maiúscula, resolução por MIME, PDF truncado, ponto de extensão do registry, mensagens de erro e validação.
+
+</details>
+
+<details> <summary><strong>Task: Analyze the document and suggest title, description and category (Sprint2)</strong></summary>
+
+Quando o usuário escolhe um arquivo para enviar, o formulário vem preenchido com título, descrição e categoria. Criei o POST /api/v1/documents/analyze no akpedia-ml: não persiste nada, não devolve embeddings e não altera o /process. O texto continua vindo do mesmo extrator do /process (pypdf); o PyMuPDF entra só para o que o pypdf joga fora — título do /Info, número de páginas, tamanho de fonte, posição e limites de parágrafo:
+
+python
+content = _read_within_limit(file)
+# O registry vem primeiro: formato não suportado é um 415 dele, não um PDF que o PyMuPDF não abriu
+text = extract_text(content, filename=file.filename, media_type=file.content_type)
+chunks = split_text(text)
+if not chunks:
+    raise _no_text_error(file)
+
+inspection = inspect_pdf(content)
+title = suggest_title(
+    metadata_title=inspection.metadata_title,
+    largest_font_line=inspection.largest_font_line,
+    regulatory_title=inspection.regulatory_title,
+    filename=file.filename,
+)
+description = suggest_description(inspection.paragraphs, title=title, summary=inspection.regulatory_summary)
+
+category = None
+if centroids is not None:
+    vectors = embedder.embed(sample_chunks(chunks, ANALYSIS_MAX_CHUNKS))
+    category = centroids.score(document_vector(vectors), temperature=CATEGORY_TEMPERATURE)
+
+Título, por prioridade: metadado /Info /Title sem prefixos de produtor (Microsoft Word - ) e descartado quando é placeholder; a linha de maior fonte da primeira página; o nome do arquivo sem extensão. Testando com PDFs reais (Federal Register, FAA), vi que só essas regras davam títulos errados, então um segundo commit acrescentou uma regra acima delas — documentos no formato assunto / AGENCY: / SUMMARY: usam a linha de assunto como título e o SUMMARY: como descrição. Candidatos sem palavras (número de página, data, código) são pulados:
+
+python
+candidates = (
+    _worded(regulatory_title),
+    _clean_metadata_title(metadata_title),
+    _worded(largest_font_line),
+    _filename_stem(filename),
+)
+for candidate in candidates:
+    if candidate:
+        return truncate_at_word(candidate, MAX_TITLE_LENGTH)
+return ""
+
+Os placeholders são comparados depois de tirar acento, caixa, dígitos e pontuação, então Sem Título, Documento1 e Untitled-2 caem todos na mesma chave:
+
+python
+def _title_key(title: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", title.casefold())
+    return "".join(char for char in decomposed if "a" <= char <= "z")
+
+Ler o layout exigiu tirar a "mobília" da página antes de sugerir qualquer coisa: texto que se repete em mais de uma página (cabeçalho corrido, ignorando a numeração) e números soltos nas margens — senão um número de página em fonte grande virava título e o cabeçalho virava descrição. Os blocos também são lidos coluna por coluna, para uma página em duas colunas não sair intercalada linha a linha:
+
+python
+def key(block: _Block) -> str:
+    return " ".join(_DIGITS.sub("#", block.text).casefold().split())
+
+pages_by_key: dict[str, set[int]] = {}
+for block in blocks:
+    pages_by_key.setdefault(key(block), set()).add(block.page)
+return [
+    block
+    for block in blocks
+    if len(pages_by_key[key(block)]) < 2 and not (block.in_margin and not has_words(block.text))
+]
+
+Descrição: primeiro parágrafo com pelo menos 40 caracteres que não seja o título, preferindo um que leia como prosa (a maioria das palavras em minúscula) a um cabeçalho de capa, cortado em 500 caracteres no limite de palavra.
+
+Categoria: até 20 chunks amostrados espalhados pelo documento — pegar os primeiros classificaria um documento longo só pela capa, sumário e introdução —, embedados com o mesmo prefixo passage: do /process. A média é renormalizada, porque a média de vetores unitários é mais curta que 1 e o produto escalar deixaria de ser a similaridade de cosseno:
+
+python
+def sample_chunks(chunks: Sequence[str], limit: int) -> list[str]:
+    if len(chunks) <= limit:
+        return list(chunks)
+    return [chunks[index * len(chunks) // limit] for index in range(limit)]
+
+def document_vector(chunk_vectors: Sequence[Sequence[float]]) -> np.ndarray:
+    matrix = np.asarray(chunk_vectors, dtype=np.float64)
+    if matrix.ndim != 2 or not len(matrix):
+        raise ValueError("At least one chunk vector is needed.")
+    return _unit(matrix.mean(axis=0))
+
+O vetor é comparado com um centróide por categoria e as similaridades viram probabilidades por softmax. Similaridades de cosseno entre documentos de domínio parecido ficam muito próximas (o vencedor às vezes lidera por 0,05), e um softmax puro espalharia a probabilidade quase igualmente — por isso há uma temperatura configurável (CATEGORY_TEMPERATURE, default 0,05), com a qual uma vantagem de 0,05 vale um fator e:
+
+python
+def score(self, document: np.ndarray, *, temperature: float) -> CategoryScores:
+    if document.shape != (self.dimensions,):
+        raise ValueError(
+            f"Document vector has shape {document.shape}, but the centroids have {self.dimensions} "
+            "dimensions. Rebuild them with the embedding model the service is running."
+        )
+    probabilities = _softmax((self.vectors @ document) / temperature)
+    best = int(np.argmax(probabilities))
+    return CategoryScores(
+        category=self.labels[best],
+        confidence=float(probabilities[best]),
+        scores={label: float(p) for label, p in zip(self.labels, probabilities, strict=True)},
+    )
+
+Os centróides são gerados por scripts/build_centroids.py a partir de um manifest.csv de documentos rotulados, embedando cada um exatamente como a rota faz, e salvos em data/categories/centroids.npz. Sem o arquivo, a rota responde 200 com category: null (estado esperado enquanto não há base rotulada); um arquivo que existe mas está malformado é erro de deploy e falha alto em vez de ser ignorado:
+
+python
+def load_centroids(path: Path) -> CategoryCentroids | None:
+    if not path.is_file():
+        return None
+    ...
+    if vectors.ndim != 2 or not labels or vectors.shape[0] != len(labels):
+        raise ValueError(f"Malformed category centroids at '{path}': ...")
+
+77 funções de teste: cada regra de título (metadado, maior fonte, nome do arquivo, formato regulatório), corte da descrição, remoção de cabeçalho/rodapé, leitura em colunas, softmax e carga dos centróides, a rota de ponta a ponta (sem camada de texto → 422; sem centróides → category: null) e três PDFs reais como fixture.
+
+</details>
+
+<details> <summary><strong>Task: Background indexing worker (Sprint2)</strong></summary>
+
+A indexação, que antes acontecia no upload, passou a rodar depois da aprovação, num processo em segundo plano que tira documentos de uma fila um por um. Criei o app/worker.py (python -m app.worker): ele consome o Redis Stream documents:processing por um consumer group, baixa o PDF do servidor, roda o mesmo pipeline do /process (extração, chunking, embedding) e devolve o resultado no formato da resposta do /process. Qualquer falha é reportada ao servidor em vez de derrubar o worker:
+
+python
+def handle(self, message_id: str, fields: dict[str, str]) -> bool:
+    document_id = fields.get(DOCUMENT_ID_FIELD, "")
+    if not _DOCUMENT_ID.match(document_id):
+        _log(logging.ERROR, "message_invalid", messageId=message_id, fields=fields)
+        return False
+
+    context = {"documentId": document_id, "messageId": message_id}
+    started = time.perf_counter()
+    step = "download"
+    try:
+        with _timed(context, "download"):
+            file = self._server.fetch_file(document_id)
+        step = "extract"
+        with _timed(context, "extract"):
+            text = extract_text(file.content, filename=file.filename, media_type=file.media_type)
+        step = "chunk"
+        with _timed(context, "chunk"):
+            chunks = split_text(text)
+        if not chunks:
+            raise no_text_error(file.filename)
+        step = "embed"
+        with _timed(context, "embed", chunkCount=len(chunks)):
+            vectors = self._embedder.embed(chunks)
+        step = "send"
+        with _timed(context, "send"):
+            body = build_process_response(file.filename, self._embedder, chunks, vectors)
+            self._server.send_embeddings(document_id, body.model_dump(mode="json"), message_id)
+    except Exception as exc:  # fronteira do worker: toda falha é reportada
+        self._report_failure(context, step, exc, started)
+        return False
+    return True
+
+O worker nunca faz XACK: quem confirma a mensagem é o servidor, depois de persistir o resultado ou a falha. Por isso toda chamada de volta leva o messageId no corpo, para o servidor saber qual entrada confirmar. Se nem o reporte da falha chegar, a mensagem simplesmente continua pendente.
+
+O grupo é criado a partir de 0, e não de $, para que documentos aprovados antes do primeiro worker subir também sejam indexados. A falha é traduzida para os mesmos códigos de erro da API, e cada passo gera uma linha de log JSON com documentId e duração, para um documento lento ou com erro ser achado nos logs:
+
+python
+@contextmanager
+def _timed(context: dict[str, str], step: str, **fields: Any) -> Iterator[None]:
+    started = time.perf_counter()
+    try:
+        yield
+    except Exception:
+        _log(logging.WARNING, "step_failed", **context, step=step, durationMs=_elapsed_ms(started), **fields)
+        raise
+    _log(logging.INFO, "step_finished", **context, step=step, durationMs=_elapsed_ms(started), **fields)
+
+Na revisão do PR, apareceu o caso do worker que cai no meio de um documento: a mensagem fica pendente com esse consumidor e nunca mais seria lida, já que XREADGROUP ... > só entrega mensagens novas. No startup, antes de ler qualquer mensagem nova, o worker agora retoma as próprias pendentes com XCLAIM (que conta a entrega), percorrendo a lista com um cursor — como ele nunca confirma, recomeçar do topo devolveria a mesma entrada para sempre. Uma mensagem já entregue 3 vezes é reportada como falha em vez de tentada de novo, senão um documento que derruba o worker (por falta de memória, por exemplo) seria retomado primeiro a cada restart e travaria a fila inteira:
+
+python
+message_id = _text(entry["message_id"])
+self._pending_cursor = message_id
+deliveries = int(entry["times_delivered"])
+if deliveries >= self._max_deliveries:
+    self._give_up(message_id, deliveries)
+    return 1
+
+claimed = self._redis.xclaim(
+    self._stream, self._group, self._consumer, min_idle_time=0, message_ids=[message_id]
+)
+self._handle_entry(message_id, claimed[0][1] if claimed else None)
+
+O loop principal sobrevive a quedas do Redis com backoff exponencial (até 30 s), e SIGTERM só é atendido entre documentos. O serviço worker entrou no docker-compose.yml usando a mesma imagem com outro comando, com stop_grace_period: 2m — embedar um PDF grande leva dezenas de segundos, e os 10 s padrão matariam o worker no meio dele, deixando a mensagem pendente:
+
+yaml
+worker:
+  build:
+    context: .
+    target: dev
+  profiles: ["worker"]
+  command: ["python", "-m", "app.worker"]
+  restart: unless-stopped
+  stop_grace_period: 2m
+
+26 testes de integração com Redis (fakeredis) e servidor simulado, cobrindo sucesso, cada tipo de falha, mensagem inválida, retomada de pendentes e o limite de entregas.
 
 </details>
 
