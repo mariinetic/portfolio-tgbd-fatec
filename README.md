@@ -1547,6 +1547,122 @@ Um creatorId inexistente responde 404 em vez de página vazia — que seria lida
 
 </details>
 
+<details>
+  <summary><strong>Task: Approve or return a document from the review queue (Sprint2)</strong></summary>
+
+Criei as duas saídas do fluxo de revisão para um documento em `PENDING_APPROVAL`: `POST /api/v1/documents/{id}/approve`, em que o aprovador pode corrigir nome, descrição e categoria antes de aprovar, o que manda o documento para indexação; e `POST /api/v1/documents/{id}/reject`, que devolve ao autor com uma justificativa obrigatória. Qualquer outro status responde 409.
+
+```java
+@Transactional
+public DocumentReviewResponse approve(Long documentId, ApproveDocumentRequest corrections) {
+    Document document = pendingDocument(documentId);
+
+    if (corrections.categoryId() != null) {
+        document.setCategory(categories.findById(corrections.categoryId())
+                .orElseThrow(() -> new CategoryNotFoundException(corrections.categoryId())));
+    }
+    if (corrections.name() != null) {
+        document.setName(corrections.name().strip());
+    }
+    if (corrections.description() != null) {
+        String description = corrections.description().strip();
+        document.setDescription(description.isEmpty() ? null : description);
+    }
+
+    OffsetDateTime now = OffsetDateTime.now();
+    document.setStatus(DocumentStatus.APPROVED);
+    document.setApprover(users.getReferenceById(defaultUser.userId()));
+    document.setApprovedAt(now);
+    document.setReviewedAt(now);
+    document.setProcessingStatus(ProcessingStatus.PROCESSING);
+
+    events.publishEvent(new DocumentApprovedEvent(document.getId()));
+    return DocumentReviewResponse.from(document);
+}
+```
+
+Todas as correções são opcionais, e uma aprovação sem corpo só muda o status. Um nome em branco é recusado com 400, mas uma descrição em branco remove a descrição, porque é assim que o upload já trata uma descrição vazia.
+
+A checagem de `PENDING_APPROVAL` só se sustenta com o documento travado enquanto se decide. Sem isso, dois aprovadores ao mesmo tempo veriam o documento pendente, e ele seria aprovado duas vezes (e entregue duas vezes ao worker) ou aprovado e devolvido ao mesmo tempo:
+
+```java
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+@Query("SELECT d FROM Document d WHERE d.id = :id")
+Optional<Document> findForReview(@Param("id") Long id);
+```
+
+O ponto central da task é *quando* o documento entra no Redis Stream `documents:processing`. Publicar dentro da transação faria um rollback deixar na fila um documento que voltou a ser `PENDING_APPROVAL`, e o worker indexaria algo que ninguém aprovou. Por isso a aprovação só publica um evento, e o `XADD` acontece num listener que roda depois do commit:
+
+```java
+@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+public void onApproved(DocumentApprovedEvent event) {
+    publish(event.documentId());
+}
+```
+
+Publicar depois do commit abre a brecha no sentido contrário: a aprovação foi salva, e o processo cai ou o Redis está fora antes de o id ser enviado. A task não cobria esse caso, mas sem ele um documento aprovado ficaria parado em `PROCESSING` para sempre, sem ninguém saber. Resolvi com a migration `V6__document_processing_enqueued_at.sql`: a coluna só é preenchida depois que o Redis aceitou o id, então a própria tabela `documents` funciona como outbox da fila. O índice parcial cobre só os documentos que ainda esperam envio, que são poucos a qualquer momento:
+
+```sql
+ALTER TABLE documents
+    ADD COLUMN processing_enqueued_at TIMESTAMPTZ;
+
+CREATE INDEX ix_documents_pending_enqueue
+    ON documents (approved_at)
+    WHERE status = 'APPROVED'
+      AND processing_status = 'PROCESSING'
+      AND processing_enqueued_at IS NULL;
+```
+
+O envio nunca lança exceção: ele roda logo depois do commit, e qualquer erro chegaria ao aprovador como falha de uma decisão que já foi salva. Um documento que não pôde ser enviado fica como estava, para o reenvio encontrar:
+
+```java
+public boolean publish(Long documentId) {
+    try {
+        redis.opsForStream().add(StreamRecords.newRecord()
+                .ofMap(Map.of(DOCUMENT_ID_FIELD, documentId.toString()))
+                .withStreamKey(properties.streamKey()));
+    } catch (DataAccessException e) {
+        LOG.warn("Documento {} aprovado, mas nao foi possivel publica-lo em {}; sera reenviado.",
+                documentId, properties.streamKey(), e);
+        return false;
+    }
+
+    try {
+        ownTransaction.executeWithoutResult(status -> documents.markEnqueued(documentId, OffsetDateTime.now()));
+    } catch (RuntimeException e) {
+        LOG.warn("Documento {} publicado em {}, mas o envio nao foi registrado; sera reenviado.",
+                documentId, properties.streamKey(), e);
+    }
+    return true;
+}
+```
+
+Um job agendado (`ProcessingRetry`) reenvia os documentos aprovados que nunca chegaram à fila. Ele só pega os aprovados há mais tempo que um período de carência, para não duplicar um envio que ainda está em andamento, e para no primeiro documento que o Redis recusar, já que os seguintes seriam recusados também:
+
+```java
+int sent = 0;
+for (Long documentId : pending) {
+    if (!queue.publish(documentId)) {
+        break;
+    }
+    sent++;
+}
+```
+
+O custo desse desenho é que um documento pode ser enviado duas vezes: se o processo cair depois de o Redis aceitar o id e antes de o envio ser registrado, o reenvio manda de novo. Por isso o `markEnqueued` só grava quando a coluna ainda está vazia, mantendo o horário do primeiro envio.
+
+Na devolução, o PDF é apagado e a linha do documento fica, para o autor ver na listagem de submissões (AKP-56) que ele voltou e por quê. O delete é em massa, porque o `deleteBy...` derivado do Spring carregaria o binário inteiro na memória só para apagá-lo:
+
+```java
+@Modifying
+@Query("DELETE FROM DocumentFile f WHERE f.document.id = :documentId")
+int deleteByDocumentId(@Param("documentId") Long documentId);
+```
+
+48 testes: `DocumentReviewControllerTest` (13, incluindo aprovação com e sem correções, devolução sem comentário respondendo 400 e 409 para documento em outro status), `DocumentReviewServiceTest` (10), `ProcessingQueueTest` (8, provando que nada chega à fila antes do commit ou após um rollback), `ProcessingRetryTest` (5), `ReviewQueriesTest` (6) e `DocumentReviewFlowTest` (6), que roda o fluxo de ponta a ponta, inclusive o Redis fora do ar e o reenvio depois.
+
+</details>
+
 </details>
 
 <details>
