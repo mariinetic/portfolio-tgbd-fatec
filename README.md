@@ -31,39 +31,55 @@ Sou apaixonada por inteligência artificial, desenvolvimento de software e dados
   <summary><strong>Meus principais conhecimentos</strong></summary>
   <br>
 
-  <h3>AI & Machine Learning</h3>
-  <p>
-    <img src="https://img.shields.io/badge/Machine_Learning-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white" />
-    <img src="https://img.shields.io/badge/AI_Agents-4B8BBE?style=for-the-badge&logo=openai&logoColor=white" />
-  </p>
+<div align="center">
 
-  <h3>Backend</h3>
-  <p>
-    <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" />
-    <img src="https://img.shields.io/badge/Java-ED8B00?style=for-the-badge&logo=java&logoColor=white" />
-    <img src="https://img.shields.io/badge/Spring_Boot-6DB33F?style=for-the-badge&logo=springboot&logoColor=white" />
-  </p>
+### Tech Stack
 
-  <h3>Databases</h3>
-  <p>
-    <img src="https://img.shields.io/badge/PostgreSQL-336791?style=for-the-badge&logo=postgresql&logoColor=white" />
-    <img src="https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white" />
-    <img src="https://img.shields.io/badge/MongoDB-4DB33D?style=for-the-badge&logo=mongodb&logoColor=white" />
-  </p>
+**AI & Machine Learning**
 
-  <h3>DevOps & Tools</h3>
-  <p>
-    <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
-    <img src="https://img.shields.io/badge/Kubernetes-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white" />
-    <img src="https://img.shields.io/badge/Microsoft_Azure-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white" />
-    <img src="https://img.shields.io/badge/Linux-000000?style=for-the-badge&logo=linux&logoColor=white" />
-    <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" />
-  </p>
+![ML](https://img.shields.io/badge/ML-E0507A?style=flat&logo=scikitlearn&logoColor=white)
+![Deep Learning](https://img.shields.io/badge/Deep%20Learning-A78BFA?style=flat&logo=pytorch&logoColor=white)
+![AI Agents](https://img.shields.io/badge/AI%20Agents-9575CD?style=flat&logo=openai&logoColor=white)
+![LLMs](https://img.shields.io/badge/LLMs-818CF8?style=flat&logo=openai&logoColor=white)
+![NLP](https://img.shields.io/badge/NLP-F4A625?style=flat&logo=huggingface&logoColor=white)
+![Computer Vision](https://img.shields.io/badge/Computer%20Vision-C084FC?style=flat&logo=opencv&logoColor=white)
+![Data Science](https://img.shields.io/badge/Data%20Science-60A5FA?style=flat&logo=jupyter&logoColor=white)
 
-</details>
+
+**Databases**
+
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-5B85D6?style=flat&logo=postgresql&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-6E8FB0?style=flat&logo=mysql&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-5FBF8B?style=flat&logo=mongodb&logoColor=white)
+![Oracle](https://img.shields.io/badge/Oracle-F4837E?style=flat&logo=oracle&logoColor=white)
+![Cassandra](https://img.shields.io/badge/Cassandra-4FB8C4?style=flat&logo=apachecassandra&logoColor=white)
+
+**DevOps & Tools**
+
+![Docker](https://img.shields.io/badge/Docker-5B9BF0?style=flat&logo=docker&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-6C7FE0?style=flat&logo=kubernetes&logoColor=white)
+![Azure](https://img.shields.io/badge/Azure-4FA8D8?style=flat&logo=microsoftazure&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-6C8FE0?style=flat&logo=githubactions&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-E08A3C?style=flat&logo=grafana&logoColor=white)
+
+**Frontend**
+
+![Vue.js](https://img.shields.io/badge/Vue.js-4FC08D?style=flat&logo=vuedotjs&logoColor=white)
+![Angular](https://img.shields.io/badge/Angular-FF6B7A?style=flat&logo=angular&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5B8DEF?style=flat&logo=typescript&logoColor=white)
+![JavaScript](https://img.shields.io/badge/JavaScript-C9A227?style=flat&logo=javascript&logoColor=white)
+![React](https://img.shields.io/badge/React-4EC5C1?style=flat&logo=react&logoColor=white)
+
+**Backend**
+
+![Python](https://img.shields.io/badge/Python-4FA8D8?style=flat&logo=python&logoColor=white)
+![Java](https://img.shields.io/badge/Java-F4995C?style=flat&logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-6FCF64?style=flat&logo=springboot&logoColor=white)
+![Django](https://img.shields.io/badge/Django-4C7A57?style=flat&logo=django&logoColor=white)
 
 </div>
 
+</div>
 
 ---
 
