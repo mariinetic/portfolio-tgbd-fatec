@@ -1923,6 +1923,231 @@ Por fim, registrei as decisões que dependiam de outras pessoas e não cabia a m
 
 </details>
 
+<details>
+  <summary><strong>Task: Retrieve the closest passages for the chat (Sprint3)</strong></summary>
+
+O chat só responde com documentos que a pessoa pode ver. A busca que já existia devolve um trecho por documento, porque mostra um card por resultado. O chat precisa de outra coisa: os k trechos mais próximos da pergunta, mesmo que vários sejam do mesmo documento. Criei o `EmbeddingRepository.findTopChunks` para isso, com o mesmo filtro da busca (documento aprovado, indexado, pelo mesmo modelo e numa categoria permitida):
+
+```sql
+select content, document_id, name, category, score, chunk_index
+from (
+        select e.id as embedding_id,
+               e.content,
+               d.id as document_id,
+               d.name,
+               c.name as category,
+               1 - (e.vector <=> cast(:queryVector as vector)) as score,
+               e.chunk_index
+        from embeddings e
+        join documents d on d.id = e.document_id
+        join categories c on c.id = d.category_id
+        where d.processing_status = 'COMPLETED'
+          and d.status = 'APPROVED'
+          and e.model_name = :modelName
+          and e.dimensions = :dimensions
+          and d.category_id in (:categoryIds)
+) candidates
+where score >= :minimumScore
+order by score desc, embedding_id
+limit :passageLimit
+```
+
+A busca é exata de propósito: ordenar pelo `score`, e não direto pelo operador de distância, deixa o Postgres fora do índice HNSW. Esse índice acha primeiro os vizinhos mais próximos e só depois aplica os filtros, olhando apenas os 40 mais próximos (`hnsw.ef_search`). Se esses 40 forem de documentos em revisão ou de categorias que a pessoa não vê, os trechos válidos logo atrás deles nunca voltariam, e o chat responderia "não encontrei" com a resposta guardada no banco. Fiz um teste só para esse caso, com um trecho válido escondido atrás de vários mais próximos que o usuário não pode ver.
+
+O `ChatRetrievalService` gera o vetor da pergunta pelo `EmbeddingClient` e aplica o limite mínimo de similaridade (`akpedia.chat.minimum-score`, 0,80 por padrão) e o máximo de trechos (`akpedia.chat.max-passages`, 6). As categorias permitidas vêm do `CategoryAccessService` (AKP-67) a cada pergunta. Se o setor da pessoa não vê nenhuma categoria, a pergunta nem chega ao akpedia-ml:
+
+```java
+public List<RetrievedPassage> retrieve(String question, Long userId) {
+    Set<Long> allowed = categoryAccess.allowedCategoryIds(userId);
+    if (allowed.isEmpty()) {
+        return List.of();
+    }
+
+    QueryEmbeddingResponse embedding = embeddingClient.embedQuery(question.strip());
+    QueryVectors.validate(embedding);
+
+    return embeddings.findTopChunks(
+                    QueryVectors.literal(embedding.embedding()),
+                    embedding.model().name(),
+                    embedding.model().dimensions(),
+                    properties.minimumScore(),
+                    allowed,
+                    properties.maxPassages())
+            .stream()
+            .map(ChatRetrievalService::toPassage)
+            .toList();
+}
+```
+
+Este serviço é onde as permissões do chat são aplicadas. O modelo de linguagem só lê o que sai daqui, e o akpedia-ml não confere nenhuma permissão. A validação do vetor e a conversão para o formato do pgvector estavam escritas dentro do `SearchService`. Movi as duas para uma classe compartilhada, `QueryVectors`, para a busca e o chat recusarem exatamente os mesmos vetores:
+
+```java
+static void validate(QueryEmbeddingResponse response) {
+    if (response == null || response.model() == null || response.embedding() == null) {
+        throw new EmbeddingException("The embedding service returned an incomplete query vector.");
+    }
+    if (response.model().dimensions() != Embedding.VECTOR_DIMENSIONS
+            || response.embedding().size() != Embedding.VECTOR_DIMENSIONS) {
+        throw new EmbeddingException("The query vector dimensions do not match the indexed vectors.");
+    }
+    if (response.model().name() == null || response.model().name().isBlank()) {
+        throw new EmbeddingException("The query vector has no model name.");
+    }
+}
+```
+
+Testes: `ChatPassagesQueryTest` (5, contra o Postgres, incluindo vários trechos do mesmo documento, o limite mínimo e o trecho válido atrás dos bloqueados) e `ChatRetrievalServiceTest` (4).
+
+</details>
+
+<details>
+  <summary><strong>Task: Answer chat questions with their sources (Sprint3)</strong></summary>
+
+O funcionário faz uma pergunta e recebe uma resposta curta com as fontes. Criei o `POST /api/v1/chat`: o servidor busca os trechos que a pessoa pode ver (AKP-68), manda para o akpedia-ml escrever a resposta (AKP-85) e devolve a resposta com os documentos citados. Quando nenhum trecho passa do limite mínimo, a resposta é `found: false` sem chamar o modelo de linguagem, que não teria de onde responder e é a parte lenta:
+
+```java
+public ChatResponse answer(String question, Long userId) {
+    String asked = question.strip();
+    List<RetrievedPassage> passages = retrieve(asked, userId);
+    if (passages.isEmpty()) {
+        return notFound();
+    }
+
+    ChatAnswer answer = chatClient.answer(asked, passages);
+    if (!answer.found()) {
+        return new ChatResponse(answer.answer(), false, List.of());
+    }
+    return new ChatResponse(answer.answer(), true, sourcesOf(answer.sources(), passages));
+}
+```
+
+As fontes são montadas a partir dos trechos que o servidor enviou, nunca só do que o akpedia-ml devolve. Um id citado que não estava entre os trechos enviados é descartado. Assim, a resposta nunca aponta para um documento que a pessoa não podia ver, mesmo que o modelo invente um id:
+
+```java
+private static List<ChatResponse.Source> sourcesOf(List<String> cited, List<RetrievedPassage> passages) {
+    Map<String, RetrievedPassage> sent = new LinkedHashMap<>();
+    for (RetrievedPassage passage : passages) {
+        sent.putIfAbsent(String.valueOf(passage.documentId()), passage);
+    }
+    return cited.stream()
+            .filter(Objects::nonNull)
+            .map(String::strip)
+            .distinct()
+            .map(sent::get)
+            .filter(Objects::nonNull)
+            .map(passage -> new ChatResponse.Source(passage.documentId(), passage.name(), passage.category()))
+            .toList();
+}
+```
+
+O `ChatClient` chama o `POST /api/v1/chat/answer` do akpedia-ml e foi montado no mesmo modelo do `EmbeddingClient`, com `RestClient` e timeouts próprios em `akpedia.chat.*`. O modelo de linguagem do akpedia-ml pode levar até 120 s, então o timeout de leitura ficou em 150 s, acima disso. Pelo mesmo motivo, abri uma rota própria no nginx para o chat com 180 s: o limite de 120 s do `/api/` cortaria uma resposta que ainda estava chegando.
+
+```yaml
+chat:
+  minimum-score: ${CHAT_MINIMUM_SCORE:0.80}
+  max-passages: ${CHAT_MAX_PASSAGES:6}
+  connect-timeout: ${CHAT_CONNECT_TIMEOUT:2s}
+  read-timeout: ${CHAT_READ_TIMEOUT:150s}
+```
+
+Toda falha do akpedia-ml vira uma única exceção, `ChatUnavailableException`, e a API responde `503 chat_unavailable`. Isso vale para o serviço fora do ar, o timeout, o 503 do modelo e uma resposta que o servidor não consegue ler. Separar os casos não ajudaria quem perguntou, que só pode tentar de novo mais tarde, então o detalhe vai para o log e a pessoa recebe uma mensagem simples:
+
+```java
+@ExceptionHandler(ChatUnavailableException.class)
+public ResponseEntity<ApiErrorResponse> handleChatUnavailable(ChatUnavailableException e) {
+    log.warn("Chat answer failed: {}", e.getMessage());
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(new ApiErrorResponse("chat_unavailable", "O chat está indisponível no momento. Tente novamente mais tarde."));
+}
+```
+
+Uma resposta do akpedia-ml sem o campo `found` é recusada, e não lida como "não encontrado": ler um contrato quebrado como uma resposta válida esconderia o problema. A pergunta é limitada a 1000 caracteres, e o histórico de auditoria guarda a requisição, mas nunca o texto da pergunta.
+
+Testes: `ChatServiceTest` (7, incluindo o modelo não ser chamado sem trechos e a fonte inventada sendo descartada), `ChatClientTest` (6), `ChatClientTimeoutTest` (2, contra um servidor que aceita a conexão e fica mudo) e `ChatControllerTest` (5, incluindo pergunta em branco e acima de 1000 caracteres respondendo 400).
+
+</details>
+
+<details>
+  <summary><strong>Task: Send the data breach notice once ANPD is informed (Sprint3)</strong></summary>
+
+A Akaer avisa os funcionários afetados por um incidente de segurança, dizendo que a ANPD foi comunicada e quais medidas estão em andamento (LGPD, art. 48). Criei as rotas de admin para isso, com o envio feito pelo `MailService` (AKP-72):
+
+- `GET /api/v1/admin/breach-notices/template`: o assunto e o texto sugeridos, para o admin completar;
+- `POST /api/v1/admin/breach-notices`: envia o aviso para todos os usuários ou para os escolhidos;
+- `GET /api/v1/admin/breach-notices` e `GET /api/v1/admin/breach-notices/{id}`: o histórico e o detalhe de cada envio.
+
+O envio só sai depois que o admin confirma que a ANPD foi comunicada. Sem `anpdInformed: true`, a rota responde 422, e essa é a primeira checagem, antes de buscar qualquer usuário. A regra também está no banco: a migration (`V17__breach_notices.sql`, porque já havia migrations até a V16) tem um `check` que impede gravar um aviso sem essa confirmação, já que o registro é justamente o que precisa mostrar isso:
+
+```sql
+create table breach_notices (
+    id            bigserial primary key,
+    sent_by       bigint       not null,
+    subject       varchar(200) not null,
+    body          text         not null,
+    anpd_informed boolean      not null,
+    sent_at       timestamptz  not null default now(),
+    constraint fk_breach_notices_sent_by
+        foreign key (sent_by) references users (id),
+    constraint ck_breach_notices_anpd_informed check (anpd_informed)
+);
+
+create table breach_notice_recipients (
+    id        bigserial primary key,
+    notice_id bigint       not null,
+    user_id   bigint       not null,
+    email     varchar(255) not null,
+    status    varchar(10)  not null default 'PENDING',
+    error     varchar(1000),
+    constraint uq_breach_notice_recipients_notice_user unique (notice_id, user_id),
+    constraint ck_breach_notice_recipients_status check (status in ('PENDING', 'SENT', 'FAILED'))
+);
+```
+
+O envio acontece em três etapas, para o registro nunca dizer mais do que realmente aconteceu. Primeiro, o aviso e uma linha `PENDING` por destinatário são gravados. Depois, os e-mails saem pelo `MailService`, fora de qualquer transação, porque o SMTP pode demorar. Por fim, cada linha recebe `SENT` ou `FAILED` e a auditoria registra as contagens. Um envio interrompido no meio deixa as linhas que faltaram como `PENDING`, visíveis no detalhe do aviso:
+
+```java
+// 1. o aviso e os destinatários, todos PENDING
+List<BreachNoticeRecipient> rows = transaction.execute(status -> {
+    refuseRepeats(subject, body, to);
+    BreachNotice notice = notices.save(new BreachNotice(users.getReferenceById(adminId), subject, body, true));
+    return recipients.saveAll(to.stream()
+            .map(user -> new BreachNoticeRecipient(notice, user, user.getEmail()))
+            .toList());
+});
+
+// 2. os e-mails, um resultado por destinatário na mesma ordem; o MailService nunca lança exceção
+List<MailResult> results = mail.sendAll(rows.stream()
+        .map(row -> new OutgoingMail(row.getEmail(), subject, body))
+        .toList());
+
+// 3. como foi cada um
+for (int i = 0; i < rows.size(); i++) {
+    BreachNoticeRecipient row = rows.get(i);
+    if (results.get(i) instanceof Failed failed) {
+        row.markFailed("%s: %s".formatted(failed.reason(), failed.detail()));
+    } else {
+        row.markSent();
+    }
+}
+```
+
+A resposta diz quantos e-mails saíram e quais falharam, com o motivo de cada falha. Os destinatários são os usuários ligados a uma conta no Keycloak e não excluídos. Um id escolhido que não existe, foi excluído ou não tem conta é recusado pelo número.
+
+Um aviso de vazamento não pode chegar duas vezes por acidente, com um segundo clique ou a tela tentando de novo depois de uma resposta lenta. Antes de gravar, o envio pega um lock do Postgres que vale até o fim da transação. Com ele, duas requisições ao mesmo tempo não conseguem passar juntas: a segunda espera e encontra as linhas `PENDING` da primeira. Um envio igual que já chegou a esses usuários nos últimos 30 minutos responde 409. Reenviar o mesmo texto só para quem falhou continua permitido:
+
+```java
+@Query(value = "select 1 from pg_advisory_xact_lock(:key)", nativeQuery = true)
+Integer lockSending(@Param("key") long key);
+```
+
+O template fica em `src/main/resources/breach-notice/`, com lacunas `[PREENCHER: ...]` para o admin completar com os dados do incidente. Um aviso com alguma lacuna ainda aberta é recusado com 400, para nunca sair um e-mail pela metade. O assunto também não pode ter quebra de linha, que permitiria injetar cabeçalhos. O template é lido uma vez, no startup: se ele faltar no build, a aplicação não sobe, em vez de descobrir isso no meio de um incidente.
+
+Por fim, os avisos ficam como prova de que a pessoa foi avisada, então nunca são alterados nem apagados. Quando um usuário exclui a conta, o `AccountDeletionService` agora tira o e-mail dele dos avisos que recebeu, mas mantém o registro do envio.
+
+Testes: `BreachNoticeServiceTest` (13, incluindo o 422 sem confirmação da ANPD, a lacuna aberta e os dois casos de 409), `BreachNoticeQueriesTest` (8, contra o Postgres, incluindo o lock), `AdminBreachNoticeControllerTest` (9) e um caso novo no `AccountDeletionServiceTest`.
+
+</details>
+
 </details>
 
 <details>
