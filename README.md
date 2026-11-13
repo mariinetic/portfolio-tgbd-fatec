@@ -2591,14 +2591,14 @@ Testes: `test_chat_answer.py` (24), cobrindo citações, `found: false`, trechos
 
 </details>
 
+</details>
+
 <details>
   <summary><strong>Apresentação do TG</strong></summary>
 
   Como tema para a apresentação do TG, foi escolhido o conteúdo de Machine Learning desenvolvido no semestre anterior, considerando a afinidade e a experiência adquirida com o tema.
 
-  **Materiais e documentação:** [Repositório Akpedia – GitHub](https://github.com/mariinetic/portfolio-tgbd-fatec/tree/main/docs/6-akpedia)
-
-</details>
+  **Materiais, documentação e artigo:** [Repositório Akpedia – GitHub](https://github.com/mariinetic/portfolio-tgbd-fatec/tree/main/docs/6-akpedia)
 
 </details>
 
