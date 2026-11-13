@@ -1062,7 +1062,7 @@ Já a segunda documentação foi elaborada pensando na transição de responsabi
 Essa documentação teve como propósito assegurar uma transição de conhecimento fluida, permitindo que o time de DevOps compreendesse rapidamente as decisões técnicas tomadas e desse continuidade ao projeto com segurança e eficiência.
 
 Neste link está disponível toda a documentação referente ao planejamento, desenvolvimento e entrega da aplicação, incluindo também as diretrizes de manutenção:
-[Entrega do projeto](https://github.com/mariinetic/portifolio-fatec/tree/main/doc)
+[Entrega do projeto](https://github.com/mariinetic/portfolio-tgbd-fatec/tree/main/docs/5-scars)
 
 </details>
 
@@ -2588,6 +2588,15 @@ _SENTENCE_END = re.compile(r"[.!?](?!\d)(?:\s*\[\s*\d+(?:\s*,\s*\d+)*\s*\])*")
 Quando o modelo falha ou não responde a tempo, a rota responde `503 llm_unavailable`. Os detalhes, como o endereço do servidor do modelo, vão para o log e não para quem chamou. Pelo mesmo motivo, o log só registra contagens de trechos, nunca o conteúdo, que é sensível.
 
 Testes: `test_chat_answer.py` (24), cobrindo citações, `found: false`, trechos em branco, citação inventada, corte por limite de tokens, pergunta em branco (400), timeout e erro do provedor (503) e o contrato em camelCase; e `test_chat_answer_ollama.py` (3), que roda o prompt contra o modelo real no Ollama, inclusive um trecho com instrução escondida. Esse último fica de fora da suíte padrão e só roda quando o Ollama está no ar.
+
+</details>
+
+<details>
+  <summary><strong>Apresentação do TG</strong></summary>
+
+  Como tema para a apresentação do TG, foi escolhido o conteúdo de Machine Learning desenvolvido no semestre anterior, considerando a afinidade e a experiência adquirida com o tema.
+
+  **Materiais e documentação:** [Repositório Akpedia – GitHub](https://github.com/mariinetic/portfolio-tgbd-fatec/tree/main/docs/6-akpedia)
 
 </details>
 
