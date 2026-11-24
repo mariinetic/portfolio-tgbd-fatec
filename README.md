@@ -1,4 +1,5 @@
-<img width="1500" height="500" alt="Brown Minimalist Welcome Message XTwitter Header" src="https://github.com/user-attachments/assets/72ef72e5-1b9f-4e33-829e-90e6cfb74873" />
+<img width="1006" height="328" alt="image" src="https://github.com/user-attachments/assets/db9391d5-e06d-45b9-a2f0-66c1a56f9020" />
+
 
 Atualmente curso graduação em **Banco de Dados** na **FATEC São José dos Campos**, com previsão de conclusão em 2026. Escolhi a FATEC em busca de uma formação sólida e orientada à prática, fortalecendo minha base para atuar na área de tecnologia.
 
